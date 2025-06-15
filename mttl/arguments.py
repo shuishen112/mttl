@@ -556,8 +556,10 @@ class FinetuneConfig(MultiExpertConfig):
     sk: int = 5  # number of experts to retrieve from a library
     finetune_regime: str = None  # polylib_full, lib_mu, polylib_selector
     tasksets_path: str = None
+    es_metric: str = "loss"
 
     def __post_init__(self):
+        super().__post_init__()
         if self.finetune_task_name is not None and isinstance(
             self.finetune_task_name, str
         ):
@@ -590,6 +592,11 @@ class EvaluationConfig(MultiExpertConfig, TransformArgs):
     es_metric: str = "loss"
     n_ng_iterations: int = 30  # number of iterations for LoraHub
     recompute_prototypes: bool = False
+    gsm_template: str = "cot"
+    lora_merge_after: bool = False
+    gsm_dataset: str = "gsm-hard"
+    save_merged_model: str = None
+    expert_weights: str = None
 
 
 @dataclass
