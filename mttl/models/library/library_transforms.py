@@ -38,6 +38,8 @@ from mttl.models.utils import transfer_batch_to_device
 from mttl.registrable import Registrable
 from mttl.serializable import Serializable
 from mttl.models.library.wudi_closed_form import AnalyticalSolver
+from mttl.logging import TableLogger
+import wandb
 
 
 class LibraryTransform(abc.ABC, Registrable):
@@ -297,7 +299,7 @@ class WudiMergeAfter(LibraryTransform):
         """
         return the task merged vectors in each layer
         """
-
+        rank_table = TableLogger()
         if type(library) == str:
             library = ExpertLibrary.get_expert_library(library)
         expert_names = list(library.keys())
@@ -308,7 +310,7 @@ class WudiMergeAfter(LibraryTransform):
         layer_names = [
             name.split(".lora_")[0] for name in one_expert.expert_weights.keys()
         ]
-        layer_names = list(set(layer_names))
+        layer_names = sorted(list(set(layer_names)))
 
         # get the task vectors for each expert
         task_vectors_experts = {}
@@ -335,6 +337,20 @@ class WudiMergeAfter(LibraryTransform):
 
             # save the merged task vector in each layer
             task_merged_vectors[layer] = merged_task_vector / len(experts)
+
+            # get the rank of the merged task vector
+            rank = torch.linalg.matrix_rank(merged_task_vector)
+            logger.info(
+                f"Rank of the merged task vector for {layer} is {rank}, original rank is {merged_task_vector.shape[0]}"
+            )
+            rank_table.log(
+                {
+                    "layer": layer,
+                    "rank": rank.item(),
+                    "original_rank": merged_task_vector.shape[0],
+                }
+            )
+        rank_table.log_final_table()
         return task_merged_vectors
 
 
@@ -880,10 +896,10 @@ class KnotMerge(LibraryTransform):
             # SVD
             device = "cuda" if torch.cuda.is_available() else "cpu"
             W_l = torch.cat(Ws, dim=1).to(device)
-            U, s, Vt = torch.linalg.svd(W_l.to(torch.float64), full_matrices=False)
-            U = U[:, s > 1e-5].type(torch.float32)
-            Vt = Vt[s > 1e-5].type(torch.float32)
-            s = s[s > 1e-5].type(torch.float32)
+            U, s, Vt = torch.linalg.svd(W_l, full_matrices=False)
+            U = U[:, s > 1e-5]
+            Vt = Vt[s > 1e-5]
+            s = s[s > 1e-5]
             UsV_dict[layer] = {"U": deepcopy(U), "s": deepcopy(s), "V": deepcopy(Vt)}
             # Set all s to be the same scale
             s[s <= 1e-5] = 0
